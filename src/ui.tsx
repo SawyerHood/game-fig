@@ -20,7 +20,9 @@ import {
 import potrace from "potrace";
 import { promisify } from "es6-promisify";
 
-const posterize = promisify(potrace.posterize);
+const posterize: (ArrayBuffer, any) => Promise<string> = promisify(
+  potrace.posterize
+);
 
 function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve) => {
@@ -88,7 +90,7 @@ function App() {
             if (frame % 5 !== 0) {
               return;
             }
-            requestAnimationFrame(() => {
+            requestAnimationFrame(async () => {
               const { scale, readyForFrame } = store.getState();
 
               if (!readyForFrame) {
@@ -106,21 +108,12 @@ function App() {
               store.update((draft) => {
                 draft.readyForFrame = false;
               });
-              scaledCanvasRef.current.toBlob(async (blob) => {
-                const buffer = await blob.arrayBuffer();
-                potrace.posterize(
-                  buffer,
-                  { threshold: 180, steps: 4 },
-                  (err, svg) => {
-                    if (err) {
-                      console.error(err);
-                    }
-                    sendMessage({
-                      type: "render frame",
-                      svg,
-                    });
-                  }
-                );
+              const blob = await toBlob(scaledCanvasRef.current);
+              const buffer = await blob.arrayBuffer();
+              const svg = await posterize(buffer, { threshold: 180, steps: 4 });
+              sendMessage({
+                type: "render frame",
+                svg,
               });
             });
           },
