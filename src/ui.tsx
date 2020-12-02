@@ -17,6 +17,18 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
+import potrace from "potrace";
+import { promisify } from "es6-promisify";
+
+const posterize = promisify(potrace.posterize);
+
+function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob);
+    });
+  });
+}
 
 const manager: StorageManager = {
   get() {
@@ -40,7 +52,7 @@ const store = createStore({
 });
 
 store.subscribe(["scale"], () => {
-  sendMessage({ type: "update scale", scale: store.getState().scale });
+  sendMessage({ type: "update scale", scale: store.getState().scale || 1 });
 });
 
 window.onmessage = ({
@@ -91,27 +103,30 @@ function App() {
                 GAMEBOY_WIDTH * scale,
                 GAMEBOY_HEIGHT * scale
               );
-              const svg = ImageTracer.imagedataToSVG(
-                context.getImageData(
-                  0,
-                  0,
-                  GAMEBOY_WIDTH * scale,
-                  GAMEBOY_HEIGHT * scale
-                )
-              );
               store.update((draft) => {
                 draft.readyForFrame = false;
               });
-              sendMessage({
-                type: "render frame",
-                svg,
+              scaledCanvasRef.current.toBlob(async (blob) => {
+                const buffer = await blob.arrayBuffer();
+                potrace.posterize(
+                  buffer,
+                  { threshold: 180, steps: 4 },
+                  (err, svg) => {
+                    if (err) {
+                      console.error(err);
+                    }
+                    sendMessage({
+                      type: "render frame",
+                      svg,
+                    });
+                  }
+                );
               });
             });
           },
         },
         canvasRef.current
       );
-      console.log("LOADED");
     })();
   }, []);
 
@@ -170,8 +185,8 @@ function App() {
       />
       <canvas
         ref={scaledCanvasRef}
-        width={GAMEBOY_WIDTH * GAMEBOY_SCALE}
-        height={GAMEBOY_HEIGHT * GAMEBOY_SCALE}
+        width={GAMEBOY_WIDTH * scale}
+        height={GAMEBOY_HEIGHT * scale}
         className="hiddenCanvas"
       />
       <div
