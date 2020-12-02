@@ -1,0 +1,3 @@
+[submodule "wasmboy"]
+	path = wasmboy
+	url = git@github.com:SawyerHood/wasmboy.git

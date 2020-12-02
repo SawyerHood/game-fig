@@ -1,11 +1,34 @@
 {
-  "name": "game-fig",
+  "name": "sandbox",
   "version": "1.0.0",
-  "description": "Your Figma Plugin",
+  "description": "",
   "main": "code.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": ""
+  "license": "ISC",
+  "dependencies": {
+    "@chakra-ui/react": "^1.0.1",
+    "@emotion/react": "^11.1.1",
+    "@emotion/styled": "^11.0.0",
+    "@figma/plugin-typings": "^1.16.1",
+    "@types/react": "^17.0.0",
+    "@types/react-dom": "^17.0.0",
+    "auger-state": "0.0.1",
+    "css-loader": "^3.1.0",
+    "framer-motion": "^2.9.5",
+    "html-webpack-inline-source-plugin": "0.0.10",
+    "html-webpack-plugin": "^3.2.0",
+    "imagetracerjs": "^1.2.6",
+    "react": "^17.0.0",
+    "react-dom": "^17.0.0",
+    "style-loader": "^0.23.1",
+    "ts-loader": "^6.0.4",
+    "typescript": "^4.0.3",
+    "url-loader": "^2.1.0",
+    "wasmboy": "file:./wasmboy",
+    "webpack": "^4.38.0",
+    "webpack-cli": "^3.3.6"
+  }
 }
