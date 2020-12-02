@@ -7,3 +7,7 @@ export type WorkerMessage =
       type: "update scale";
       scale: number;
     };
+
+export type UIMessage = {
+  type: "finished frame";
+};

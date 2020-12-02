@@ -2,7 +2,7 @@ import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { WasmBoy } from "wasmboy";
 import "./ui.css";
-import type { WorkerMessage } from "./messages";
+import type { WorkerMessage, UIMessage } from "./messages";
 import ImageTracer from "imagetracerjs";
 import { GAMEBOY_HEIGHT, GAMEBOY_SCALE, GAMEBOY_WIDTH } from "./constants";
 import { createStore, useAuger } from "auger-state";
@@ -16,7 +16,6 @@ import {
   NumberInputField,
   Stack,
   Text,
-  Flex,
 } from "@chakra-ui/react";
 
 const manager: StorageManager = {
@@ -29,8 +28,6 @@ const manager: StorageManager = {
 
 const { useState, useEffect, useRef } = React;
 
-declare function require(path: string): any;
-
 function sendMessage(msg: WorkerMessage) {
   parent.postMessage({ pluginMessage: msg }, "*");
 }
@@ -39,11 +36,27 @@ let frame = 0;
 
 const store = createStore({
   scale: GAMEBOY_SCALE,
+  readyForFrame: false,
 });
 
 store.subscribe(["scale"], () => {
   sendMessage({ type: "update scale", scale: store.getState().scale });
 });
+
+window.onmessage = ({
+  data: { pluginMessage: msg },
+}: {
+  data: { pluginMessage: UIMessage };
+}) => {
+  switch (msg.type) {
+    case "finished frame": {
+      store.update((draft) => {
+        draft.readyForFrame = true;
+      });
+      return;
+    }
+  }
+};
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -55,16 +68,21 @@ function App() {
   const [scale, setScale] = auger.scale.$();
   useEffect(() => {
     (async () => {
-      WasmBoy._runNumberOfFrames;
       await WasmBoy.config(
         {
-          updateGraphicsCallback(buffer) {
+          useGbcWhenOptional: false,
+          updateGraphicsCallback() {
             frame++;
             if (frame % 5 !== 0) {
               return;
             }
             requestAnimationFrame(() => {
-              const scale = store.getState().scale;
+              const { scale, readyForFrame } = store.getState();
+
+              if (!readyForFrame) {
+                return;
+              }
+
               const context = scaledCanvasRef.current.getContext("2d");
               context.drawImage(
                 canvasRef.current,
@@ -81,6 +99,9 @@ function App() {
                   GAMEBOY_HEIGHT * scale
                 )
               );
+              store.update((draft) => {
+                draft.readyForFrame = false;
+              });
               sendMessage({
                 type: "render frame",
                 svg,
