@@ -19,7 +19,6 @@ import {
   TabPanels,
   TabPanel,
 } from "@chakra-ui/react";
-
 import potrace from "potrace";
 import { promisify } from "es6-promisify";
 import {
@@ -29,13 +28,31 @@ import {
   FigRom,
   fileToFigRom,
   encodeFigRom,
+  SaveState,
 } from "./encoding";
 
-const posterize: (ArrayBuffer, any) => Promise<string> = promisify(
-  potrace.posterize
-);
+type CurrentGameBoy = {
+  id: string;
+  name: string;
+  rom: FigRom | null;
+  saveState: SaveState;
+};
 
-function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+type AppState = {
+  isFigmaReadyForFrame: boolean;
+  isEmulatorPlaying: boolean;
+  tab: "create" | "play";
+  selectedGameboyID: string | null;
+  currentGameBoy: CurrentGameBoy | null;
+  gamesBoysByID: { [id: string]: { name: string } };
+};
+
+const posterize: (
+  buffer: ArrayBuffer,
+  params: any
+) => Promise<string> = promisify(potrace.posterize);
+
+function toBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
   return new Promise((resolve) => {
     canvas.toBlob((blob) => {
       resolve(blob);
@@ -57,11 +74,16 @@ function sendMessage(msg: WorkerMessage) {
   parent.postMessage({ pluginMessage: msg }, "*");
 }
 
-const store = createStore({
-  readyForFrame: false,
+const store = createStore<AppState>({
+  isFigmaReadyForFrame: false,
+  isEmulatorPlaying: false,
+  tab: "create",
+  selectedGameboyID: null,
+  currentGameBoy: null,
+  gamesBoysByID: {},
 });
 
-let currentSave = null;
+let currentSave: any = null;
 let rom: FigRom | null = null;
 
 window.onmessage = async ({
@@ -72,7 +94,7 @@ window.onmessage = async ({
   switch (msg.type) {
     case "finished frame": {
       store.update((draft) => {
-        draft.readyForFrame = true;
+        draft.isFigmaReadyForFrame = true;
       });
       return;
     }
@@ -88,14 +110,10 @@ window.onmessage = async ({
     }
   }
 };
-
-function App() {
-  const [file, setFile] = useState<File | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const scaledCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const svgContainer = useRef<HTMLDivElement | null>(null);
-  const auger = useAuger(store);
-
+function useWasmBoy(
+  canvasRef: React.RefObject<HTMLCanvasElement>,
+  scaledCanvasRef: React.RefObject<HTMLCanvasElement>
+) {
   useEffect(() => {
     (async () => {
       await WasmBoy.config(
@@ -103,24 +121,38 @@ function App() {
           useGbcWhenOptional: false,
           updateGraphicsCallback() {
             requestAnimationFrame(async () => {
-              const { readyForFrame } = store.getState();
+              const { isFigmaReadyForFrame } = store.getState();
 
-              if (!readyForFrame) {
+              if (!isFigmaReadyForFrame) {
                 return;
               }
 
-              const context = scaledCanvasRef.current.getContext("2d");
+              const context = scaledCanvasRef.current?.getContext("2d");
+              const canvas = canvasRef.current;
+
+              if (!context || !canvas) {
+                return;
+              }
+
               context.drawImage(
-                canvasRef.current,
+                canvas,
                 0,
                 0,
                 GAMEBOY_WIDTH * GAMEBOY_SCALE,
                 GAMEBOY_HEIGHT * GAMEBOY_SCALE
               );
               store.update((draft) => {
-                draft.readyForFrame = false;
+                draft.isFigmaReadyForFrame = false;
               });
+
+              if (!scaledCanvasRef.current) {
+                return;
+              }
+
               const blob = await toBlob(scaledCanvasRef.current);
+              if (!blob) {
+                return;
+              }
               const buffer = await blob.arrayBuffer();
               const svg = await posterize(buffer, { threshold: 180, steps: 4 });
               sendMessage({
@@ -134,6 +166,12 @@ function App() {
       );
     })();
   }, []);
+}
+
+function CreateTab() {
+  const [file, setFile] = useState<File | null>(null);
+
+  const auger = useAuger(store);
 
   const saveGame = async () => {
     const save = await WasmBoy.saveState();
@@ -167,24 +205,44 @@ function App() {
   };
 
   return (
+    <form onSubmit={loadRom}>
+      <Stack padding={4} spacing={4}>
+        <FormControl>
+          <Stack spacing={4} direction="row" align="center">
+            <Text fontSize="l" color="gray.700">
+              {file?.name ?? "No ROM Selected"}
+            </Text>
+            <Button onClick={pickRom}>Select ROM</Button>
+          </Stack>
+        </FormControl>
+        <Button onClick={saveGame}>Save Game</Button>
+        <Button type="submit" colorScheme="teal">
+          Create Gameboy
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+function App() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scaledCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  useWasmBoy(canvasRef, scaledCanvasRef);
+
+  return (
     <ChakraProvider colorModeManager={manager}>
-      <form onSubmit={loadRom}>
-        <Stack padding={4} spacing={4}>
-          <FormControl>
-            <FormLabel>Game Boy ROM</FormLabel>
-            <Stack spacing={4} direction="row" align="center">
-              <Text fontSize="l" color="gray.700">
-                {file?.name ?? "No ROM Selected"}
-              </Text>
-              <Button onClick={pickRom}>Select ROM</Button>
-            </Stack>
-          </FormControl>
-          <Button onClick={saveGame}>Save Game</Button>
-          <Button type="submit" colorScheme="teal">
-            Load ROM
-          </Button>
-        </Stack>
-      </form>
+      <Tabs>
+        <TabList>
+          <Tab>Create</Tab>
+          <Tab isDisabled={true}>Play</Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel>
+            <CreateTab />
+          </TabPanel>
+          <TabPanel>Null</TabPanel>
+        </TabPanels>
+      </Tabs>
       <canvas
         ref={canvasRef}
         width={GAMEBOY_WIDTH}
@@ -196,10 +254,6 @@ function App() {
         width={GAMEBOY_WIDTH * GAMEBOY_SCALE}
         height={GAMEBOY_HEIGHT * GAMEBOY_SCALE}
         className="hiddenCanvas"
-      />
-      <div
-        ref={svgContainer}
-        style={{ width: GAMEBOY_WIDTH, height: GAMEBOY_HEIGHT }}
       />
     </ChakraProvider>
   );

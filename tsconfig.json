@@ -3,7 +3,8 @@
     "target": "es6",
     "jsx": "react",
     "moduleResolution": "node",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "strict": true
   },
   "exclude": ["node_modules", "wasmboy"]
 }

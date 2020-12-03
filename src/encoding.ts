@@ -1,6 +1,6 @@
 import { bytesToBase64, base64ToBytes } from "byte-base64";
 
-type SaveState = {
+export type SaveState = {
   date: number;
   isAuto: boolean;
   wasmboyMemory: {
@@ -15,7 +15,9 @@ export function encodeSaveState(state: SaveState) {
   const copy: any = { ...state };
   copy.wasmboyMemory = {};
   for (const key in state.wasmboyMemory) {
-    copy.wasmboyMemory[key] = bytesToBase64(state.wasmboyMemory[key]);
+    copy.wasmboyMemory[key] = bytesToBase64(
+      state.wasmboyMemory[key as keyof SaveState["wasmboyMemory"]]
+    );
   }
 
   return JSON.stringify(copy);
