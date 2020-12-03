@@ -19,6 +19,7 @@ import {
 } from "@chakra-ui/react";
 import potrace from "potrace";
 import { promisify } from "es6-promisify";
+import { encodeSaveState, decodeSaveState } from "./encoding";
 
 const posterize: (ArrayBuffer, any) => Promise<string> = promisify(
   potrace.posterize
@@ -53,6 +54,8 @@ const store = createStore({
   readyForFrame: false,
 });
 
+let currentSave = null;
+
 store.subscribe(["scale"], () => {
   sendMessage({ type: "update scale", scale: store.getState().scale || 1 });
 });
@@ -67,6 +70,10 @@ window.onmessage = ({
       store.update((draft) => {
         draft.readyForFrame = true;
       });
+      return;
+    }
+    case "current save": {
+      currentSave = decodeSaveState(msg.state);
       return;
     }
   }
@@ -123,6 +130,12 @@ function App() {
     })();
   }, []);
 
+  const saveGame = async () => {
+    const save = await WasmBoy.saveState();
+    sendMessage({ type: "save state", state: encodeSaveState(save) });
+    WasmBoy.play();
+  };
+
   return (
     <ChakraProvider colorModeManager={manager}>
       <form
@@ -130,6 +143,10 @@ function App() {
           e.preventDefault();
           if (file) {
             await WasmBoy.loadROM(file);
+            if (currentSave) {
+              console.log(currentSave);
+              await WasmBoy.loadState(currentSave);
+            }
             await WasmBoy.play();
           }
         }}
@@ -155,16 +172,7 @@ function App() {
               </Button>
             </Stack>
           </FormControl>
-          <FormControl>
-            <FormLabel>Scale:</FormLabel>
-            <NumberInput
-              type="number"
-              value={scale}
-              onChange={(scale) => setScale(() => +scale)}
-            >
-              <NumberInputField />
-            </NumberInput>
-          </FormControl>
+          <Button onClick={saveGame}>Save Game</Button>
           <Button type="submit" colorScheme="teal">
             Load ROM
           </Button>

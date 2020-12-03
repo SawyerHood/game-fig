@@ -1,25 +1,53 @@
 /// <reference path="../node_modules/@figma/plugin-typings/index.d.ts" />
 
 import type { WorkerMessage, UIMessage } from "./messages";
-import { GAMEBOY_HEIGHT, GAMEBOY_SCALE, GAMEBOY_WIDTH } from "./constants";
+import {
+  GAMEBOY_HEIGHT,
+  GAMEBOY_SCALE,
+  GAMEBOY_WIDTH,
+  GAMEBOY_SVG,
+} from "./constants";
 
 let scale = GAMEBOY_SCALE;
+let gbRoot: FrameNode;
 
 function sendUIMessage(msg: UIMessage) {
   figma.ui.postMessage(msg);
 }
 
+function createGameBoy() {
+  const root = figma.createFrame();
+  root.fills = [];
+  root.resize(560, 951);
+  root.name = "GameBoy";
+  const gameboyNode = figma.createNodeFromSvg(GAMEBOY_SVG);
+  root.appendChild(gameboyNode);
+  const screen = figma.createFrame();
+  screen.fills = [];
+  screen.resize(GAMEBOY_WIDTH * scale, GAMEBOY_HEIGHT * scale);
+  root.appendChild(screen);
+  screen.x = 119;
+  screen.y = 85;
+  screen.setPluginData("game-fig-root", "true");
+  figma.viewport.scrollAndZoomIntoView([root]);
+
+  gbRoot = screen;
+}
+
 figma.showUI(__html__, { width: 500, height: 500 });
-let gbRoot = figma.currentPage.findOne((node) => {
+
+gbRoot = figma.currentPage.findOne((node) => {
   return Boolean(node.getPluginData("game-fig-root"));
 }) as FrameNode;
 
-if (!gbRoot) {
-  gbRoot = figma.createFrame();
-  gbRoot.resize(GAMEBOY_WIDTH * scale, GAMEBOY_HEIGHT * scale);
-  gbRoot.setPluginData("game-fig-root", "true");
-  gbRoot.name = "GameBoy";
-  figma.viewport.scrollAndZoomIntoView([gbRoot]);
+if (gbRoot) {
+  const state = gbRoot.getPluginData("save");
+  sendUIMessage({
+    type: "current save",
+    state,
+  });
+} else {
+  createGameBoy();
 }
 
 sendUIMessage({ type: "finished frame" });
@@ -36,6 +64,10 @@ figma.ui.onmessage = (msg: WorkerMessage) => {
     case "update scale": {
       scale = msg.scale;
       gbRoot.resize(GAMEBOY_WIDTH * scale, GAMEBOY_HEIGHT * scale);
+      return;
+    }
+    case "save state": {
+      gbRoot.setPluginData("save", msg.state);
       return;
     }
   }

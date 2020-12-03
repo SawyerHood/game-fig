@@ -6,8 +6,14 @@ export type WorkerMessage =
   | {
       type: "update scale";
       scale: number;
+    }
+  | {
+      type: "save state";
+      state: string;
     };
 
-export type UIMessage = {
-  type: "finished frame";
-};
+export type UIMessage =
+  | {
+      type: "finished frame";
+    }
+  | { type: "current save"; state: string };
