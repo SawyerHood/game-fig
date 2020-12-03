@@ -3,7 +3,6 @@ import * as ReactDOM from "react-dom";
 import { WasmBoy } from "wasmboy";
 import "./ui.css";
 import type { WorkerMessage, UIMessage } from "./messages";
-import ImageTracer from "imagetracerjs";
 import { GAMEBOY_HEIGHT, GAMEBOY_SCALE, GAMEBOY_WIDTH } from "./constants";
 import { createStore, useAuger } from "auger-state";
 import {
@@ -12,14 +11,25 @@ import {
   FormLabel,
   FormControl,
   StorageManager,
-  NumberInput,
-  NumberInputField,
   Stack,
   Text,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanels,
+  TabPanel,
 } from "@chakra-ui/react";
+
 import potrace from "potrace";
 import { promisify } from "es6-promisify";
-import { encodeSaveState, decodeSaveState } from "./encoding";
+import {
+  encodeSaveState,
+  decodeSaveState,
+  decodeFigRom,
+  FigRom,
+  fileToFigRom,
+  encodeFigRom,
+} from "./encoding";
 
 const posterize: (ArrayBuffer, any) => Promise<string> = promisify(
   potrace.posterize
@@ -47,20 +57,14 @@ function sendMessage(msg: WorkerMessage) {
   parent.postMessage({ pluginMessage: msg }, "*");
 }
 
-let frame = 0;
-
 const store = createStore({
-  scale: GAMEBOY_SCALE,
   readyForFrame: false,
 });
 
 let currentSave = null;
+let rom: FigRom | null = null;
 
-store.subscribe(["scale"], () => {
-  sendMessage({ type: "update scale", scale: store.getState().scale || 1 });
-});
-
-window.onmessage = ({
+window.onmessage = async ({
   data: { pluginMessage: msg },
 }: {
   data: { pluginMessage: UIMessage };
@@ -72,8 +76,14 @@ window.onmessage = ({
       });
       return;
     }
-    case "current save": {
+    case "load persisted state": {
       currentSave = decodeSaveState(msg.state);
+      rom = decodeFigRom(msg.rom);
+      await WasmBoy.loadROM(rom.rom);
+      if (currentSave) {
+        await WasmBoy.loadState(currentSave);
+      }
+      await WasmBoy.play();
       return;
     }
   }
@@ -86,19 +96,14 @@ function App() {
   const svgContainer = useRef<HTMLDivElement | null>(null);
   const auger = useAuger(store);
 
-  const [scale, setScale] = auger.scale.$();
   useEffect(() => {
     (async () => {
       await WasmBoy.config(
         {
           useGbcWhenOptional: false,
           updateGraphicsCallback() {
-            frame++;
-            if (frame % 5 !== 0) {
-              return;
-            }
             requestAnimationFrame(async () => {
-              const { scale, readyForFrame } = store.getState();
+              const { readyForFrame } = store.getState();
 
               if (!readyForFrame) {
                 return;
@@ -109,8 +114,8 @@ function App() {
                 canvasRef.current,
                 0,
                 0,
-                GAMEBOY_WIDTH * scale,
-                GAMEBOY_HEIGHT * scale
+                GAMEBOY_WIDTH * GAMEBOY_SCALE,
+                GAMEBOY_HEIGHT * GAMEBOY_SCALE
               );
               store.update((draft) => {
                 draft.readyForFrame = false;
@@ -136,21 +141,34 @@ function App() {
     WasmBoy.play();
   };
 
+  const loadRom = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (file) {
+      await WasmBoy.loadROM(file);
+      const figRom = await fileToFigRom(file);
+      sendMessage({
+        type: "persist rom",
+        rom: encodeFigRom(figRom),
+      });
+      if (currentSave) {
+        await WasmBoy.loadState(currentSave);
+      }
+      await WasmBoy.play();
+    }
+  };
+
+  const pickRom = () => {
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.onchange = (e: any) => {
+      setFile(e.target.files[0]);
+    };
+    fileInput.click();
+  };
+
   return (
     <ChakraProvider colorModeManager={manager}>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (file) {
-            await WasmBoy.loadROM(file);
-            if (currentSave) {
-              console.log(currentSave);
-              await WasmBoy.loadState(currentSave);
-            }
-            await WasmBoy.play();
-          }
-        }}
-      >
+      <form onSubmit={loadRom}>
         <Stack padding={4} spacing={4}>
           <FormControl>
             <FormLabel>Game Boy ROM</FormLabel>
@@ -158,18 +176,7 @@ function App() {
               <Text fontSize="l" color="gray.700">
                 {file?.name ?? "No ROM Selected"}
               </Text>
-              <Button
-                onClick={() => {
-                  const fileInput = document.createElement("input");
-                  fileInput.type = "file";
-                  fileInput.onchange = (e: any) => {
-                    setFile(e.target.files[0]);
-                  };
-                  fileInput.click();
-                }}
-              >
-                Select ROM
-              </Button>
+              <Button onClick={pickRom}>Select ROM</Button>
             </Stack>
           </FormControl>
           <Button onClick={saveGame}>Save Game</Button>
@@ -186,8 +193,8 @@ function App() {
       />
       <canvas
         ref={scaledCanvasRef}
-        width={GAMEBOY_WIDTH * scale}
-        height={GAMEBOY_HEIGHT * scale}
+        width={GAMEBOY_WIDTH * GAMEBOY_SCALE}
+        height={GAMEBOY_HEIGHT * GAMEBOY_SCALE}
         className="hiddenCanvas"
       />
       <div

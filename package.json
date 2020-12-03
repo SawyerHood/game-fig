@@ -17,6 +17,7 @@
     "@types/react": "^17.0.0",
     "@types/react-dom": "^17.0.0",
     "auger-state": "0.0.1",
+    "byte-base64": "^1.1.0",
     "css-loader": "^3.1.0",
     "es6-promisify": "^6.1.1",
     "framer-motion": "^2.9.5",

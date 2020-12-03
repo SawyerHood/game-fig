@@ -10,10 +10,11 @@ export type WorkerMessage =
   | {
       type: "save state";
       state: string;
-    };
+    }
+  | { type: "persist rom"; rom: string };
 
 export type UIMessage =
   | {
       type: "finished frame";
     }
-  | { type: "current save"; state: string };
+  | { type: "load persisted state"; state: string; rom: string };

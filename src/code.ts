@@ -42,9 +42,11 @@ gbRoot = figma.currentPage.findOne((node) => {
 
 if (gbRoot) {
   const state = gbRoot.getPluginData("save");
+  const rom = gbRoot.getPluginData("rom");
   sendUIMessage({
-    type: "current save",
+    type: "load persisted state",
     state,
+    rom,
   });
 } else {
   createGameBoy();
@@ -68,6 +70,10 @@ figma.ui.onmessage = (msg: WorkerMessage) => {
     }
     case "save state": {
       gbRoot.setPluginData("save", msg.state);
+      return;
+    }
+    case "persist rom": {
+      gbRoot.setPluginData("rom", msg.rom);
       return;
     }
   }
