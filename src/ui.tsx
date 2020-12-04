@@ -18,6 +18,15 @@ import {
   Tab,
   TabPanels,
   TabPanel,
+  Box,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  SimpleGrid,
+  Heading,
+  GridItem,
+  Badge,
 } from "@chakra-ui/react";
 import potrace from "potrace";
 import { promisify } from "es6-promisify";
@@ -31,6 +40,10 @@ import {
   SaveState,
 } from "./encoding";
 
+const TABS = ["create", "play"] as const;
+
+type Tab = typeof TABS[number];
+
 type CurrentGameBoy = {
   id: string;
   name: string;
@@ -41,11 +54,18 @@ type CurrentGameBoy = {
 type AppState = {
   isFigmaReadyForFrame: boolean;
   isEmulatorPlaying: boolean;
-  tab: "create" | "play";
+  tab: Tab;
   selectedGameboyID: string | null;
   currentGameBoy: CurrentGameBoy | null;
   gamesBoysByID: { [id: string]: { name: string } };
 };
+
+/**
+ * createGameboy
+ * play
+ * pause
+ * selectGame
+ */
 
 const posterize: (
   buffer: ArrayBuffer,
@@ -107,6 +127,36 @@ window.onmessage = async ({
       }
       await WasmBoy.play();
       return;
+    }
+    case "update current gameboy": {
+      const oldState = store.getState();
+      if (oldState.currentGameBoy) {
+        const { id } = oldState.currentGameBoy;
+        store.update((draft) => {
+          draft.isEmulatorPlaying = false;
+        });
+        const saveState = await WasmBoy.saveState();
+        sendMessage({
+          type: "save state",
+          state: encodeSaveState(saveState),
+          id,
+        });
+      }
+      const figRom = decodeFigRom(msg.rom);
+      const saveState = msg.saveState ? decodeSaveState(msg.saveState) : null;
+      store.update((draft) => {
+        draft.currentGameBoy = {
+          id: msg.id,
+          name: msg.name,
+          rom,
+          saveState,
+        };
+        draft.tab = "play";
+      });
+      await WasmBoy.loadROM(figRom.rom);
+      if (saveState) {
+        await WasmBoy.loadState(saveState);
+      }
     }
   }
 };
@@ -171,27 +221,16 @@ function useWasmBoy(
 function CreateTab() {
   const [file, setFile] = useState<File | null>(null);
 
-  const auger = useAuger(store);
-
-  const saveGame = async () => {
-    const save = await WasmBoy.saveState();
-    sendMessage({ type: "save state", state: encodeSaveState(save) });
-    WasmBoy.play();
-  };
-
-  const loadRom = async (e: React.SyntheticEvent) => {
+  const createGameboy = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (file) {
-      await WasmBoy.loadROM(file);
       const figRom = await fileToFigRom(file);
+      const rom = encodeFigRom(figRom);
       sendMessage({
-        type: "persist rom",
-        rom: encodeFigRom(figRom),
+        type: "create gameboy",
+        rom,
+        name: file.name,
       });
-      if (currentSave) {
-        await WasmBoy.loadState(currentSave);
-      }
-      await WasmBoy.play();
     }
   };
 
@@ -205,7 +244,7 @@ function CreateTab() {
   };
 
   return (
-    <form onSubmit={loadRom}>
+    <form onSubmit={createGameboy}>
       <Stack padding={4} spacing={4}>
         <FormControl>
           <Stack spacing={4} direction="row" align="center">
@@ -215,7 +254,6 @@ function CreateTab() {
             <Button onClick={pickRom}>Select ROM</Button>
           </Stack>
         </FormControl>
-        <Button onClick={saveGame}>Save Game</Button>
         <Button type="submit" colorScheme="teal">
           Create Gameboy
         </Button>
@@ -224,23 +262,151 @@ function CreateTab() {
   );
 }
 
+function PlayTab() {
+  const auger = useAuger(store);
+  const [isFocused, setIsFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const focus = () => setIsFocused(true);
+    const blur = () => setIsFocused(false);
+    window.addEventListener("focus", focus);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+  const currentGameBoy = auger.currentGameBoy.$read();
+  const [
+    isEmulatorPlaying,
+    updateIsEmulatorPlaying,
+  ] = auger.isEmulatorPlaying.$();
+
+  let bottomSection = null;
+  if (isEmulatorPlaying) {
+    bottomSection = isFocused ? <Focused /> : <NotFocused />;
+  }
+
+  return (
+    <Stack spacing={4} padding={4}>
+      <Text fontSize="l" color="gray.700">
+        {currentGameBoy?.name ?? "No ROM Selected"}
+      </Text>
+      <Button
+        colorScheme={isEmulatorPlaying ? "red" : "teal"}
+        isDisabled={!currentGameBoy}
+        onClick={async () => {
+          if (isEmulatorPlaying) {
+            updateIsEmulatorPlaying(() => false);
+            const id = currentGameBoy?.id;
+            if (!id) {
+              return;
+            }
+            const saveState = await WasmBoy.saveState();
+            sendMessage({
+              type: "save state",
+              id,
+              state: encodeSaveState(saveState),
+            });
+          } else {
+            updateIsEmulatorPlaying(() => true);
+            WasmBoy.play();
+          }
+        }}
+      >
+        {isEmulatorPlaying ? "Pause" : "Play"}
+      </Button>
+      {bottomSection}
+    </Stack>
+  );
+}
+
+function NotFocused() {
+  return (
+    <Alert
+      status="warning"
+      variant="subtle"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      textAlign="center"
+      height="200px"
+    >
+      <AlertIcon boxSize="40px" mr={0} />
+      <AlertTitle mt={4} mb={1} fontSize="lg">
+        Plugin Not Focused
+      </AlertTitle>
+      <AlertDescription maxWidth="sm">
+        You have to focus the plugin to control the GameBoy. You can click this
+        box to focus.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+const KEYS = [
+  ["A", "X"],
+  ["B", "Z"],
+  ["UP", "UP"],
+  ["DOWN", "DOWN"],
+  ["LEFT", "LEFT"],
+  ["RIGHT", "RIGHT"],
+  ["Start", "Enter"],
+  ["Select", "Backspace"],
+];
+
+function Focused() {
+  return (
+    <SimpleGrid borderWidth="1px" borderRadius="sm" columns={2}>
+      <GridItem colSpan={2}>
+        <Heading size="md" paddingY={1}>
+          Controls
+        </Heading>
+      </GridItem>
+      <Heading size="xs" paddingY={1}>
+        GameBoy
+      </Heading>
+      <Heading size="xs" paddingY={1}>
+        KeyBoard
+      </Heading>
+      {KEYS.map(([gb, kb]) => {
+        return (
+          <>
+            <Badge fontSize="sm" paddingY={1}>
+              {gb}
+            </Badge>
+            <Badge fontSize="sm" paddingY={1}>
+              {kb}
+            </Badge>
+          </>
+        );
+      })}
+    </SimpleGrid>
+  );
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const scaledCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useWasmBoy(canvasRef, scaledCanvasRef);
+  const auger = useAuger(store);
+  const [tab, updateTab] = auger.tab.$();
+  const currentGameBoy = auger.currentGameBoy.$read();
+  const index = TABS.indexOf(tab);
 
   return (
     <ChakraProvider colorModeManager={manager}>
-      <Tabs>
+      <Tabs index={index} onChange={(index) => updateTab(() => TABS[index])}>
         <TabList>
           <Tab>Create</Tab>
-          <Tab isDisabled={true}>Play</Tab>
+          <Tab disabled={currentGameBoy === null}>Play</Tab>
         </TabList>
         <TabPanels>
           <TabPanel>
             <CreateTab />
           </TabPanel>
-          <TabPanel>Null</TabPanel>
+          <TabPanel>
+            <PlayTab />
+          </TabPanel>
         </TabPanels>
       </Tabs>
       <canvas
