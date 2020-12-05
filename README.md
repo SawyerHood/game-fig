@@ -1,23 +1,14 @@
-# React 
+# GameFig
 
-<img src="../_screenshots/webpack.png" width="400" />
+GameFig is a Figma plugin that runs a game boy emulator inside of Figma! The game output is rendered as SVG so you can scale the screen how you please. The entire game state is stored inside of the Gameboy layer so you can copy and paste the layers to create save states and even paste them between files.
 
-Creates rectangles (same as the [Webpack sample plugin][webpack]).
+## Install
 
-This demonstrates:
+GameFig hasn't been published on the Figma community yet, but you can install it locally. Start by cloning this repo. Then you can do the following:
 
-- bundling plugin code using Webpack, and
-- using React with TSX.
-
-The main plugin code is in `src/code.ts`. The HTML for the UI is in
-`src/ui.html`, while the embedded JavaScript is in `src/ui.tsx`.
-
-These are compiled to files in `dist/`, which are what Figma will use to run
-your plugin.
-
-To build:
-
-    $ npm install
-    $ npx webpack
-
-[webpack]: ../webpack/
+```bash
+git submodule init
+git submodule update
+npm install
+npm build
+```
