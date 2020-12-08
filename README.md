@@ -14,3 +14,11 @@ git submodule update
 npm install
 npm build
 ```
+
+## License
+
+MIT © [SawyerHood](https://github.com/SawyerHood)
+
+## Credits
+
+Gameboy Svg Exported from [vecteezy](https://www.vecteezy.com/vector-art/76824-game-boy-color)
